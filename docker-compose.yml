@@ -1,0 +1,57 @@
+services:
+
+  kafka-location:
+    image: apache/kafka:4.1.2
+    container_name: location-kafka
+    hostname: location-kafka
+
+    ports:
+      - "29092:29092"
+
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://location-kafka:9092,PLAINTEXT_HOST://localhost:29092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@location-kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+    networks:
+      - location-network
+
+
+  postgres-location:
+    image: postgres:18
+    container_name: location-postgres
+
+    ports:
+      - "5433:5432"
+
+    environment:
+      POSTGRES_DB: vehicle_tracking
+      POSTGRES_USER: vehicle_user
+      POSTGRES_PASSWORD: vehicle_pass
+
+    volumes:
+      - location-postgres-data:/var/lib/postgresql
+
+    networks:
+      - location-network
+
+
+networks:
+  location-network:
+
+
+volumes:
+  location-postgres-data:
