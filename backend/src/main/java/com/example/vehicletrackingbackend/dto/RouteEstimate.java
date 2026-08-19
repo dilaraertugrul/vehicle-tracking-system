@@ -3,18 +3,10 @@ package com.example.vehicletrackingbackend.dto;
 // Frontend'e kalan rota bilgilerini göndermek için kullandığımız DTO.
 public class RouteEstimate {
 
-    // Aracın Malatya'ya kalan mesafesi.
-    // Birimi metre.
     private double distanceMeters;
-
-    // Aracın Malatya'ya kalan tahmini yolculuk süresi.
-    // Birimi saniye.
     private double durationSeconds;
 
 
-    // Constructor
-    // RouteEstimate nesnesi oluştururken
-    // mesafe ve süre değerlerini dışarıdan alıyoruz.
     public RouteEstimate(
             double distanceMeters,
             double durationSeconds
