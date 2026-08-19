@@ -51,3 +51,13 @@ Spring Boot REST API
 React
   ↓
 Leaflet / OpenStreetMap
+
+## Uygulama Görselleri
+
+### Gerçek Zamanlı Araç Takip Dashboard'u
+
+![Araç Takip Dashboard](docs/images/dashboard.png)
+
+### Planlanan ve Geçilen Rota
+
+![Araç Rota Takibi](docs/images/route-tracking.png)
