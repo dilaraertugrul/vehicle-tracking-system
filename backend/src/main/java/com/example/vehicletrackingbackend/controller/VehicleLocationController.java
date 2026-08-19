@@ -25,6 +25,6 @@ public class VehicleLocationController {
     @GetMapping("/{vehicleId}/history")
     public List<VehicleLocation> getHistory(@PathVariable String vehicleId) {
         return vehicleLocationRepository
-                .findByVehicleIdOrderByTimestampAsc(vehicleId);
+                .findByVehicleIdOrderByTimestampAsc(vehicleId); // sırayla hepsini getiroyr.
     }
 }
