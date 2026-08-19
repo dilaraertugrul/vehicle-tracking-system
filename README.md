@@ -34,12 +34,9 @@ Sistem, OSRM üzerinden alınan gerçek yol rotası üzerinde bir aracın hareke
 
 ### Gerçek Zamanlı Araç Takip Dashboard'u
 
-![Araç Takip Dashboard](docs/images/dashboard.png)
+![Araç Takip Dashboard](dashboard.png)
 
-### Planlanan ve Geçilen Rota
-
-![Araç Rota Takibi](docs/images/route-tracking.png)
-
+![Araç Rota Takibi](route-tracking.png)
 ## Proje Akışı
 
 ```text
