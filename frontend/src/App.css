@@ -1,18 +1,21 @@
-/* Bütün uygulamanın ana alanı */
 .app {
     min-height: 100vh;
     background: #f4f6f8;
     font-family: Arial, sans-serif;
 }
+
 .header {
     padding: 24px 32px;
+
     background: #ffffff;
+
     border-bottom: 1px solid #dddddd;
 }
 
 
 .header h1 {
     margin: 0;
+
     font-size: 28px;
 }
 
@@ -20,15 +23,17 @@
 .header p {
     margin-top: 8px;
     margin-bottom: 0;
+
     color: #666666;
 }
-
-
 .dashboard {
     display: grid;
-    grid-template-columns: 300px 1fr;
+
+    /* Sol panel biraz genişletildi. */
+    grid-template-columns: 360px 1fr;
 
     gap: 20px;
+
     padding: 20px;
 }
 
@@ -36,23 +41,30 @@
     background: #ffffff;
 
     border: 1px solid #e5e7eb;
+
     border-radius: 18px;
 
     padding: 24px;
 
-    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+    box-shadow:
+            0 8px 28px rgba(15, 23, 42, 0.06);
 
     align-self: start;
 }
 
 
+/* =====================================================
+   PANEL BAŞLIĞI
+   ===================================================== */
+
 .panel-header {
     display: flex;
 
     align-items: center;
+
     justify-content: space-between;
 
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 }
 
 
@@ -60,10 +72,16 @@
     margin: 0;
 
     font-size: 20px;
+
     font-weight: 700;
 
     color: #111827;
 }
+
+
+/* =====================================================
+   CANLI BADGE
+   ===================================================== */
 
 .live-badge {
     display: flex;
@@ -81,6 +99,7 @@
     color: #047857;
 
     font-size: 11px;
+
     font-weight: 700;
 
     letter-spacing: 0.4px;
@@ -89,6 +108,7 @@
 
 .live-dot {
     width: 7px;
+
     height: 7px;
 
     border-radius: 50%;
@@ -97,10 +117,136 @@
 }
 
 
+/* =====================================================
+   ARAÇ SEÇİM LİSTESİ
+   ===================================================== */
+
+.vehicle-selector-list {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 9px;
+
+    margin-bottom: 22px;
+}
+
+
+/* Her aracın seçim kartı */
+.vehicle-selector {
+    width: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 12px;
+
+    padding: 13px 14px;
+
+    background: #f8fafc;
+
+    border: 1px solid #e5e7eb;
+
+    border-radius: 12px;
+
+    cursor: pointer;
+
+    text-align: left;
+
+    transition:
+            border-color 0.2s ease,
+            background 0.2s ease,
+            transform 0.2s ease;
+}
+
+
+/* Mouse aracın üzerine geldiğinde */
+.vehicle-selector:hover {
+    background: #f1f5f9;
+
+    border-color: #cbd5e1;
+
+    transform: translateY(-1px);
+}
+
+
+/* Seçili araç */
+.vehicle-selector.active {
+    background: #eff6ff;
+
+    border-color: #2563eb;
+
+    box-shadow:
+            0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+
+/* Plaka */
+.vehicle-selector strong {
+    display: block;
+
+    margin-bottom: 4px;
+
+    font-size: 14px;
+
+    color: #111827;
+}
+
+
+/* İstanbul → Malatya gibi rota */
+.vehicle-selector div span {
+    display: block;
+
+    font-size: 11px;
+
+    color: #6b7280;
+}
+
+
+/* Kartın sağındaki anlık hız */
+.selector-speed {
+    flex-shrink: 0;
+
+    font-size: 12px;
+
+    font-weight: 700;
+
+    color: #374151;
+}
+
+
+/* Seçili araç başlığı */
+.selected-vehicle-title {
+    margin-bottom: 12px;
+
+    padding-top: 18px;
+
+    border-top: 1px solid #eef0f2;
+
+    font-size: 11px;
+
+    font-weight: 700;
+
+    color: #9ca3af;
+
+    text-transform: uppercase;
+
+    letter-spacing: 0.6px;
+}
+
+
+/* =====================================================
+   SEÇİLİ ARAÇ ÖZETİ
+   ===================================================== */
+
 .vehicle-summary {
     display: flex;
 
     align-items: center;
+
     justify-content: space-between;
 
     padding-bottom: 20px;
@@ -129,6 +275,10 @@
 }
 
 
+/* =====================================================
+   HIZ
+   ===================================================== */
+
 .speed-box {
     text-align: right;
 }
@@ -152,10 +302,15 @@
 }
 
 
+/* =====================================================
+   KALKIŞ / VARIŞ
+   ===================================================== */
+
 .route-summary {
     display: grid;
 
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns:
+        1fr auto 1fr;
 
     align-items: center;
 
@@ -193,6 +348,11 @@
 
     color: #2563eb;
 }
+
+
+/* =====================================================
+   KALAN MESAFE / TAHMİNİ VARIŞ
+   ===================================================== */
 
 .stats-grid {
     display: grid;
@@ -233,6 +393,11 @@
     color: #111827;
 }
 
+
+/* =====================================================
+   KALAN SÜRE
+   ===================================================== */
+
 .countdown-card {
     padding: 16px;
 
@@ -265,6 +430,11 @@
     font-variant-numeric: tabular-nums;
 }
 
+
+/* =====================================================
+   SON GÜNCELLEME
+   ===================================================== */
+
 .last-update {
     padding-top: 14px;
 
@@ -287,34 +457,82 @@
     display: block;
 
     font-size: 13px;
+
     font-weight: 500;
 
     color: #6b7280;
 }
 
+
+/* =====================================================
+   HARİTA
+   ===================================================== */
+
 .map-panel {
     background: #ffffff;
+
     padding: 10px;
+
     border-radius: 12px;
 }
 
 
 .map {
     width: 100%;
+
     height: 650px;
+
     border-radius: 8px;
 }
 
+
+/* =====================================================
+   ARAÇ MARKER
+   ===================================================== */
+
 .car-marker {
     background: transparent;
+
     border: none;
 
     display: flex;
+
     align-items: center;
+
     justify-content: center;
 }
 
+
 .car-emoji {
     font-size: 32px;
+
     transform: scaleX(-1);
+}
+
+
+/* Seçili aracın haritada daha belirgin görünmesi */
+.selected-car-marker .car-emoji {
+    font-size: 38px;
+
+    filter:
+            drop-shadow(
+                    0 2px 4px rgba(37, 99, 235, 0.5)
+            );
+}
+
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (max-width: 1000px) {
+
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+
+
+    .map {
+        height: 550px;
+    }
 }
