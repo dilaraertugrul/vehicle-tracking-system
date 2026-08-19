@@ -1,8 +1,6 @@
 import {useEffect, useState} from "react";
 
 import {MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker} from "react-leaflet";
-
-// Leaflet'in kendi özelliklerini kullanmak için.
 import L from "leaflet";
 
 // MapContainer  Haritanın kendisi.
@@ -94,6 +92,7 @@ function App() {
     const [remainingSeconds, setRemainingSeconds] = useState(null);
     const [vehicle, setVehicle] = useState(null); // arabanın güncel konumu
     const [error, setError] = useState(null);     // Backend bağlantı hatasını tutar.
+    const vehiclePlate = "34 ABC 101";
 
     useEffect(() => {
         const fetchPlannedRoute = async () => {
@@ -301,7 +300,7 @@ function App() {
       </span>
 
                             <strong className="vehicle-id">
-                                {vehicle.vehicleId}
+                                {vehiclePlate}
                             </strong>
 
                         </div>
@@ -309,7 +308,7 @@ function App() {
 
                         <div className="speed-box">
 
-                            <span>Hız</span>
+                        <span>Hız</span>
 
                             <strong>
                                 {vehicle.speed} km/h

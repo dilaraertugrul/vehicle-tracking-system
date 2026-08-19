@@ -4,9 +4,6 @@
     background: #f4f6f8;
     font-family: Arial, sans-serif;
 }
-
-
-/* Üst başlık alanı */
 .header {
     padding: 24px 32px;
     background: #ffffff;
@@ -27,20 +24,13 @@
 }
 
 
-/* Araç bilgileri ve haritayı yan yana koyuyoruz */
 .dashboard {
     display: grid;
-
-    /* Sol panel daha küçük, harita daha büyük */
     grid-template-columns: 300px 1fr;
 
     gap: 20px;
     padding: 20px;
 }
-
-/* =========================================
-   ARAÇ BİLGİ PANELİ
-   ========================================= */
 
 .vehicle-panel {
     background: #ffffff;
@@ -55,10 +45,6 @@
     align-self: start;
 }
 
-
-/* =========================================
-   PANEL BAŞLIĞI
-   ========================================= */
 
 .panel-header {
     display: flex;
@@ -78,11 +64,6 @@
 
     color: #111827;
 }
-
-
-/* =========================================
-   CANLI BADGE
-   ========================================= */
 
 .live-badge {
     display: flex;
@@ -115,10 +96,6 @@
     background: #10b981;
 }
 
-
-/* =========================================
-   ARAÇ ÖZETİ
-   ========================================= */
 
 .vehicle-summary {
     display: flex;
@@ -175,10 +152,6 @@
 }
 
 
-/* =========================================
-   KALKIŞ - VARIŞ
-   ========================================= */
-
 .route-summary {
     display: grid;
 
@@ -221,11 +194,6 @@
     color: #2563eb;
 }
 
-
-/* =========================================
-   İSTATİSTİK KARTLARI
-   ========================================= */
-
 .stats-grid {
     display: grid;
 
@@ -265,11 +233,6 @@
     color: #111827;
 }
 
-
-/* =========================================
-   GERİ SAYIM KARTI
-   ========================================= */
-
 .countdown-card {
     padding: 16px;
 
@@ -302,11 +265,6 @@
     font-variant-numeric: tabular-nums;
 }
 
-
-/* =========================================
-   SON GÜNCELLEME
-   ========================================= */
-
 .last-update {
     padding-top: 14px;
 
@@ -334,8 +292,6 @@
     color: #6b7280;
 }
 
-
-/* Harita kartı */
 .map-panel {
     background: #ffffff;
     padding: 10px;
@@ -343,7 +299,6 @@
 }
 
 
-/* Leaflet haritasına yükseklik vermek zorundayız */
 .map {
     width: 100%;
     height: 650px;
