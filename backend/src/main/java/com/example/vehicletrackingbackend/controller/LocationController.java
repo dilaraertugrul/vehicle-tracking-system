@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 // Controller'ın ana URL yolunu belirlemek için kullanılır.
 
 import org.springframework.web.bind.annotation.RestController;
-// Bu sınıfın bir REST API Controller olduğunu Spring'e söyler.
 
 @RestController
 
