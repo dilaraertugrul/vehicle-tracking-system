@@ -4,17 +4,30 @@ import com.example.vehicletrackingbackend.event.LocationEvent;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
-@Service // Bunun nesnesini kendisi oluşturup yönetecek.
-public class LocationProducer {
-    private final KafkaTemplate<String, LocationEvent> kafkaTemplate; // Springin kafkaya mesaj göndermek için verdiği hazır araç
 
-    public LocationProducer(KafkaTemplate<String, LocationEvent> kafkaTemplate) {
+@Service
+// Spring bu sınıfın nesnesini oluşturur ve yönetir.
+public class LocationProducer {
+
+    // Kafka'ya mesaj göndermek için Spring'in sağladığı araç.
+    private final KafkaTemplate<String, LocationEvent> kafkaTemplate;
+
+
+    public LocationProducer(
+            KafkaTemplate<String, LocationEvent> kafkaTemplate
+    ) {
+
         this.kafkaTemplate = kafkaTemplate;
     }
+
     public void sendLocation(LocationEvent event) {
-        kafkaTemplate.send("vehicle-location-events", event); // hangi topic olduğu ve ne göndereceği bilgisi veriliyor.
+
+        kafkaTemplate.send(
+                // Mesajın gönderileceği topic.
+                "vehicle-location-events",
+                event.getVehicleId(),
+                event
+        );
     }
 }
-/*
-Oluşturulan LocationEvent nesnesini Kafkadaki topice göndermek.
- */
+
