@@ -1,4 +1,9 @@
-import { Fragment, useEffect, useState } from "react";
+import {
+    Fragment,
+    useEffect,
+    useRef,
+    useState
+} from "react";
 
 import {
     MapContainer,
@@ -14,122 +19,58 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
-const VEHICLE_CONFIGS = [
 
-    {
-        id: "CAR-101",
-        plate: "34 ABC 101",
-
-        startCity: "İstanbul",
-        destinationCity: "Bolu",
-
-        startLatitude: 41.0082,
-        startLongitude: 28.9784,
-
-        destinationLatitude: 40.7350,
-        destinationLongitude: 31.6066
-    },
-
-    {
-        id: "CAR-102",
-        plate: "06 DEF 102",
-
-        startCity: "Ankara",
-        destinationCity: "Konya",
-
-        startLatitude: 39.9334,
-        startLongitude: 32.8597,
-
-        destinationLatitude: 37.8746,
-        destinationLongitude: 32.4932
-    },
-
-    {
-        id: "CAR-103",
-        plate: "35 XYZ 103",
-
-        startCity: "İzmir",
-        destinationCity: "Antalya",
-
-        startLatitude: 38.4237,
-        startLongitude: 27.1428,
-
-        destinationLatitude: 36.8969,
-        destinationLongitude: 30.7133
-    }
-];
+const VEHICLE_PLATES = {
+    "CAR-101": "34 ABC 101",
+    "CAR-102": "06 DEF 102",
+    "CAR-103": "35 XYZ 103"
+};
 
 
 const carIcon = L.divIcon({
-
     className: "car-marker",
-
     html: '<div class="car-emoji">🚗</div>',
-
     iconSize: [40, 40],
-
     iconAnchor: [20, 20],
-
     popupAnchor: [0, -20]
 });
 
-function findClosestRouteIndex(
-    route,
-    latitude,
-    longitude
-) {
 
-    if (route.length === 0) {
-        return 0;
+// =========================================================
+// YARDIMCI FONKSİYONLAR
+// =========================================================
+
+function toDate(timestamp) {
+
+    if (!timestamp) {
+        return null;
     }
 
+    // Java LocalDateTime mikro saniyesini
+    // JavaScript'in okuyabileceği hale getirir.
+    const normalized =
+        timestamp.replace(
+            /(\.\d{3})\d+/,
+            "$1"
+        );
 
-    let closestIndex = 0;
+    const date =
+        new Date(normalized);
 
-    let smallestDistance = Infinity;
-
-
-    route.forEach(
-        ([routeLatitude, routeLongitude], index) => {
-
-            const distance =
-
-                Math.pow(
-                    routeLatitude - latitude,
-                    2
-                )
-
-                +
-
-                Math.pow(
-                    routeLongitude - longitude,
-                    2
-                );
-
-
-            if (distance < smallestDistance) {
-
-                smallestDistance = distance;
-
-                closestIndex = index;
-            }
-        }
-    );
-
-
-    return closestIndex;
+    return Number.isNaN(date.getTime())
+        ? null
+        : date;
 }
+
 
 function formatTimestamp(timestamp) {
 
-    if (!timestamp) {
+    const date =
+        toDate(timestamp);
+
+    if (!date) {
         return "-";
     }
-
-
-    const date =
-        new Date(timestamp);
-
 
     return date.toLocaleString(
         "tr-TR",
@@ -137,7 +78,6 @@ function formatTimestamp(timestamp) {
             day: "2-digit",
             month: "2-digit",
             year: "numeric",
-
             hour: "2-digit",
             minute: "2-digit",
             second: "2-digit"
@@ -145,12 +85,12 @@ function formatTimestamp(timestamp) {
     );
 }
 
+
 function formatDuration(seconds) {
 
     if (seconds === null) {
         return "-";
     }
-
 
     const totalSeconds =
         Math.max(
@@ -158,25 +98,22 @@ function formatDuration(seconds) {
             Math.floor(seconds)
         );
 
-
     const hours =
         Math.floor(
             totalSeconds / 3600
         );
-
 
     const minutes =
         Math.floor(
             (totalSeconds % 3600) / 60
         );
 
-
     const secs =
         totalSeconds % 60;
 
-
     return `${hours} sa ${minutes} dk ${secs} sn`;
 }
+
 
 function calculateArrivalTime(seconds) {
 
@@ -184,16 +121,11 @@ function calculateArrivalTime(seconds) {
         return "-";
     }
 
-
-    const arrivalDate =
-        new Date(
-            Date.now()
-            +
-            seconds * 1000
-        );
-
-
-    return arrivalDate.toLocaleTimeString(
+    return new Date(
+        Date.now()
+        +
+        seconds * 1000
+    ).toLocaleTimeString(
         "tr-TR",
         {
             hour: "2-digit",
@@ -202,56 +134,302 @@ function calculateArrivalTime(seconds) {
     );
 }
 
+
+function formatSpeed(speed) {
+
+    return speed == null
+        ? "-"
+        : `${Math.round(speed)} km/h`;
+}
+
+
+// Aracın rota üzerindeki en yakın noktasını bulur.
+// Kırmızı "gidilen rota" çizgisinde kullanılır.
+function findClosestRouteIndex(
+    route,
+    latitude,
+    longitude
+) {
+
+    let closestIndex = 0;
+    let smallestDistance = Infinity;
+
+    route.forEach(
+        ([routeLatitude, routeLongitude], index) => {
+
+            const distance =
+                Math.hypot(
+                    routeLatitude - latitude,
+                    routeLongitude - longitude
+                );
+
+            if (distance < smallestDistance) {
+
+                smallestDistance =
+                    distance;
+
+                closestIndex =
+                    index;
+            }
+        }
+    );
+
+    return closestIndex;
+}
+
+
+// =========================================================
+// APP
+// =========================================================
+
 function App() {
 
     const turkeyCenter =
         [39.0, 35.0];
 
-    const [vehicles, setVehicles] =
-        useState({});
+
+    /*
+     * React geliştirme modunda useEffect
+     * iki kez çalışabileceği için reset'in
+     * iki defa gitmesini engeller.
+     */
+    const simulationStartedRef =
+        useRef(false);
 
 
-    // Her aracın planlanan OSRM rotası.
-    const [plannedRoutes, setPlannedRoutes] =
-        useState({});
+    /*
+     * Eski PostgreSQL konum kayıtlarıyla
+     * yeni simülasyon kayıtlarını ayırır.
+     */
+    const simulationStartedAtRef =
+        useRef(null);
 
 
-    // Sol panelde detayları gösterilecek araç.
+    const [
+        vehicleConfigs,
+        setVehicleConfigs
+    ] = useState([]);
+
+
+    const [
+        vehicles,
+        setVehicles
+    ] = useState({});
+
+
+    const [
+        plannedRoutes,
+        setPlannedRoutes
+    ] = useState({});
+
+
     const [
         selectedVehicleId,
         setSelectedVehicleId
     ] = useState("CAR-101");
 
 
-    // Yalnızca seçili aracın kalan mesafesi.
     const [
         remainingDistance,
         setRemainingDistance
     ] = useState(null);
 
 
-    // Yalnızca seçili aracın kalan süresi.
     const [
         remainingSeconds,
         setRemainingSeconds
     ] = useState(null);
 
 
-    const [error, setError] =
-        useState(null);
+    const [
+        error,
+        setError
+    ] = useState(null);
+
+
+    // =====================================================
+    // SİMÜLASYONU BAŞLAT
+    // =====================================================
 
     useEffect(() => {
 
-        const fetchRoutes = async () => {
+        if (simulationStartedRef.current) {
+            return;
+        }
+
+        simulationStartedRef.current =
+            true;
+
+
+        async function startSimulation() {
 
             try {
 
-                const routeResults =
+                const response =
+                    await fetch(
+                        "/api/simulation/reset",
+                        {
+                            method: "POST"
+                        }
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "Yeni simülasyon oluşturulamadı."
+                    );
+                }
+
+
+                const data =
+                    await response.json();
+
+
+                // Bundan eski eventler önceki simülasyona aittir.
+                simulationStartedAtRef.current =
+                    Date.now();
+
+
+                const configs =
+                    data.map(
+                        route => ({
+
+                            id:
+                            route.vehicleId,
+
+                            plate:
+                                VEHICLE_PLATES[
+                                    route.vehicleId
+                                    ]
+                                ||
+                                route.vehicleId,
+
+                            startCity:
+                            route.startLocationName,
+
+                            destinationCity:
+                            route.destinationLocationName,
+
+                            startLatitude:
+                            route.startLatitude,
+
+                            startLongitude:
+                            route.startLongitude,
+
+                            destinationLatitude:
+                            route.destinationLatitude,
+
+                            destinationLongitude:
+                            route.destinationLongitude
+                        })
+                    );
+
+
+                /*
+                 * Kafka'dan yeni LocationEvent gelene kadar
+                 * araçları yeni rotalarının başlangıcında göster.
+                 */
+                const initialVehicles =
+                    Object.fromEntries(
+
+                        configs.map(
+                            config => [
+
+                                config.id,
+
+                                {
+                                    vehicleId:
+                                    config.id,
+
+                                    latitude:
+                                    config.startLatitude,
+
+                                    longitude:
+                                    config.startLongitude,
+
+                                    speed:
+                                        null,
+
+                                    timestamp:
+                                        null,
+
+                                    isPlaceholder:
+                                        true
+                                }
+                            ]
+                        )
+                    );
+
+
+                setVehicleConfigs(
+                    configs
+                );
+
+                setVehicles(
+                    initialVehicles
+                );
+
+                setPlannedRoutes(
+                    {}
+                );
+
+                setSelectedVehicleId(
+                    "CAR-101"
+                );
+
+                setRemainingDistance(
+                    null
+                );
+
+                setRemainingSeconds(
+                    null
+                );
+
+                setError(
+                    null
+                );
+
+
+            } catch (err) {
+
+                console.error(
+                    "Simülasyon başlatılamadı:",
+                    err
+                );
+
+                setError(
+                    err.message
+                );
+            }
+        }
+
+
+        startSimulation();
+
+    }, []);
+
+
+    // =====================================================
+    // PLANLANAN OSRM ROTALARINI AL
+    // =====================================================
+
+    useEffect(() => {
+
+        if (vehicleConfigs.length === 0) {
+            return;
+        }
+
+
+        async function fetchRoutes() {
+
+            try {
+
+                const results =
                     await Promise.all(
 
-                        VEHICLE_CONFIGS.map(
-
-                            async (config) => {
+                        vehicleConfigs.map(
+                            async config => {
 
                                 const response =
                                     await fetch(
@@ -282,19 +460,14 @@ function App() {
 
                                 /*
                                  * OSRM:
-                                 *
                                  * [longitude, latitude]
                                  *
                                  * Leaflet:
-                                 *
                                  * [latitude, longitude]
                                  */
-
-                                const convertedRoute =
+                                const route =
                                     data.map(
-
                                         ([longitude, latitude]) => [
-
                                             latitude,
                                             longitude
                                         ]
@@ -302,154 +475,268 @@ function App() {
 
 
                                 return [
-
                                     config.id,
-
-                                    convertedRoute
+                                    route
                                 ];
                             }
                         )
                     );
 
 
-                // Array'i object yapısına çeviriyoruz.
-                //
-                // CAR-101 → rota
-                // CAR-102 → rota
-                // CAR-103 → rota
+                const routes =
+                    Object.fromEntries(
+                        results
+                    );
+
 
                 setPlannedRoutes(
-                    Object.fromEntries(
-                        routeResults
-                    )
+                    routes
+                );
+
+
+                /*
+                 * Başlangıç koordinatı OSRM yolunun
+                 * birkaç metre dışında kalabiliyor.
+                 *
+                 * Placeholder aracı tam rota başlangıcına koy.
+                 */
+                setVehicles(
+                    previous => {
+
+                        const updated =
+                            {
+                                ...previous
+                            };
+
+
+                        results.forEach(
+                            ([vehicleId, route]) => {
+
+                                if (
+                                    updated[vehicleId]?.isPlaceholder
+                                    &&
+                                    route.length > 0
+                                ) {
+
+                                    updated[
+                                        vehicleId
+                                        ] = {
+
+                                        ...updated[
+                                            vehicleId
+                                            ],
+
+                                        latitude:
+                                            route[0][0],
+
+                                        longitude:
+                                            route[0][1]
+                                    };
+                                }
+                            }
+                        );
+
+
+                        return updated;
+                    }
                 );
 
 
             } catch (err) {
 
                 console.error(
-                    "Rotalar alınırken hata:",
+                    "Rotalar alınamadı:",
                     err
                 );
-
 
                 setError(
                     err.message
                 );
             }
-        };
+        }
 
 
         fetchRoutes();
 
-    }, []);
+    }, [vehicleConfigs]);
 
+
+    // =====================================================
+    // KAFKA'DAN DB'YE GELEN GÜNCEL ARAÇ KONUMLARI
+    // =====================================================
 
     useEffect(() => {
 
-        const fetchVehicleLocations =
-            async () => {
-
-                try {
-
-                    const vehicleResults =
-                        await Promise.all(
-
-                            VEHICLE_CONFIGS.map(
-
-                                async (config) => {
-
-                                    const response =
-                                        await fetch(
-
-                                            `/api/vehicles/${config.id}/latest`
-                                        );
+        if (vehicleConfigs.length === 0) {
+            return;
+        }
 
 
-                                    if (!response.ok) {
+        async function fetchVehicleLocations() {
 
-                                        throw new Error(
-                                            `${config.id} konumu alınamadı.`
-                                        );
-                                    }
+            const results =
+                await Promise.all(
+
+                    vehicleConfigs.map(
+                        async config => {
+
+                            try {
+
+                                const response =
+                                    await fetch(
+                                        `/api/vehicles/${config.id}/latest`
+                                    );
 
 
-                                    const data =
-                                        await response.json();
-
+                                if (!response.ok) {
 
                                     return [
-
                                         config.id,
-
-                                        data
+                                        null
                                     ];
                                 }
-                            )
-                        );
 
 
-                    setVehicles(
-                        Object.fromEntries(
-                            vehicleResults
-                        )
+                                const data =
+                                    await response.json();
+
+
+                                const eventDate =
+                                    toDate(
+                                        data.timestamp
+                                    );
+
+
+                                if (!eventDate) {
+
+                                    return [
+                                        config.id,
+                                        null
+                                    ];
+                                }
+
+
+                                /*
+                                 * Eski simülasyondan kalan
+                                 * PostgreSQL kaydını kullanma.
+                                 */
+                                if (
+                                    simulationStartedAtRef.current
+                                    !==
+                                    null
+                                    &&
+                                    eventDate.getTime()
+                                    <
+                                    simulationStartedAtRef.current
+                                ) {
+
+                                    return [
+                                        config.id,
+                                        null
+                                    ];
+                                }
+
+
+                                return [
+
+                                    config.id,
+
+                                    {
+                                        ...data,
+                                        isPlaceholder:
+                                            false
+                                    }
+                                ];
+
+
+                            } catch (err) {
+
+                                console.error(
+                                    `${config.id} konumu alınamadı:`,
+                                    err
+                                );
+
+                                return [
+                                    config.id,
+                                    null
+                                ];
+                            }
+                        }
+                    )
+                );
+
+
+            /*
+             * Yeni event gelmeyen aracın önceki
+             * konumunu veya placeholder'ını koru.
+             */
+            setVehicles(
+                previous => {
+
+                    const updated =
+                        {
+                            ...previous
+                        };
+
+
+                    results.forEach(
+                        ([vehicleId, vehicle]) => {
+
+                            if (vehicle) {
+
+                                updated[
+                                    vehicleId
+                                    ] = vehicle;
+                            }
+                        }
                     );
 
 
-                    setError(null);
-
-
-                } catch (err) {
-
-                    console.error(
-                        "Araç konumları alınırken hata:",
-                        err
-                    );
-
-
-                    setError(
-                        err.message
-                    );
+                    return updated;
                 }
-            };
+            );
+        }
 
 
+        // İlk sorgu hemen yapılır.
         fetchVehicleLocations();
 
 
-        // Sonrasında 2 saniyede bir
-        // üç aracın güncel konumunu tekrar al.
-        const intervalId =
+        // Daha sonra 2 saniyede bir güncellenir.
+        const interval =
             setInterval(
-
                 fetchVehicleLocations,
-
                 2000
             );
 
 
-        return () => {
-
+        return () =>
             clearInterval(
-                intervalId
+                interval
             );
-        };
 
-    }, []);
+
+    }, [vehicleConfigs]);
+
+
+    // =====================================================
+    // SEÇİLİ ARACIN KALAN MESAFE / SÜRESİ
+    // =====================================================
+
+    const selectedConfig =
+        vehicleConfigs.find(
+            vehicle =>
+                vehicle.id === selectedVehicleId
+        );
+
+
+    const selectedVehicle =
+        vehicles[
+            selectedVehicleId
+            ];
+
 
     useEffect(() => {
-
-        const selectedVehicle =
-            vehicles[selectedVehicleId];
-
-
-        const selectedConfig =
-            VEHICLE_CONFIGS.find(
-
-                vehicle =>
-                    vehicle.id === selectedVehicleId
-            );
-
 
         if (
             !selectedVehicle
@@ -461,192 +748,140 @@ function App() {
         }
 
 
-        const fetchRemainingEstimate =
-            async () => {
+        async function fetchRemainingEstimate() {
 
-                try {
+            try {
 
-                    const response =
-                        await fetch(
+                const response =
+                    await fetch(
 
-                            `/api/routes/remaining`
-                            +
-                            `?latitude=${selectedVehicle.latitude}`
-                            +
-                            `&longitude=${selectedVehicle.longitude}`
-                            +
-                            `&destinationLatitude=${selectedConfig.destinationLatitude}`
-                            +
-                            `&destinationLongitude=${selectedConfig.destinationLongitude}`
-                        );
-
-
-                    if (!response.ok) {
-
-                        throw new Error(
-                            "Kalan rota bilgisi alınamadı."
-                        );
-                    }
-
-
-                    const data =
-                        await response.json();
-
-
-                    setRemainingDistance(
-                        data.distanceMeters
+                        `/api/routes/remaining`
+                        +
+                        `?latitude=${selectedVehicle.latitude}`
+                        +
+                        `&longitude=${selectedVehicle.longitude}`
+                        +
+                        `&destinationLatitude=${selectedConfig.destinationLatitude}`
+                        +
+                        `&destinationLongitude=${selectedConfig.destinationLongitude}`
                     );
 
 
-                    setRemainingSeconds(
-
-                        previousSeconds => {
-
-                            const newSeconds =
-                                Math.round(
-                                    data.durationSeconds
-                                );
-
-
-                            // İlk veri geldiyse
-                            // doğrudan OSRM değerini kullan.
-                            if (previousSeconds === null) {
-
-                                return newSeconds;
-                            }
-
-
-                            /*
-                             * Sayaç örneğin:
-                             *
-                             * 52 → 51 → 50
-                             *
-                             * şeklinde giderken
-                             * OSRM tekrar 52 döndürürse
-                             * süreyi yukarı çıkarmıyoruz.
-                             */
-                            return Math.min(
-                                previousSeconds,
-                                newSeconds
-                            );
-                        }
-                    );
-
-
-                } catch (err) {
-
-                    console.error(
-                        "Kalan rota bilgisi alınırken hata:",
-                        err
-                    );
+                if (!response.ok) {
+                    return;
                 }
-            };
+
+
+                const data =
+                    await response.json();
+
+
+                setRemainingDistance(
+                    data.distanceMeters
+                );
+
+
+                const newSeconds =
+                    Math.round(
+                        data.durationSeconds
+                    );
+
+
+                setRemainingSeconds(
+                    previous =>
+
+                        previous === null
+
+                            ? newSeconds
+
+                            : Math.min(
+                                previous,
+                                newSeconds
+                            )
+                );
+
+
+            } catch (err) {
+
+                console.error(
+                    "Kalan rota bilgisi alınamadı:",
+                    err
+                );
+            }
+        }
 
 
         fetchRemainingEstimate();
 
 
     }, [
-        selectedVehicleId,
-        vehicles
+        selectedVehicle?.latitude,
+        selectedVehicle?.longitude,
+        selectedConfig?.destinationLatitude,
+        selectedConfig?.destinationLongitude
     ]);
 
-    useEffect(() => {
 
-        const resetSimulation = async () => {
-
-            try {
-
-                await fetch(
-                    "/api/simulation/reset",
-                    {
-                        method: "POST"
-                    }
-                );
-
-                console.log(
-                    "Simülasyon baştan başlatıldı."
-                );
-
-            } catch (error) {
-
-                console.error(
-                    "Simülasyon sıfırlanamadı:",
-                    error
-                );
-            }
-        };
-
-
-        resetSimulation();
-
-    }, []);
-
-
+    // =====================================================
     // KALAN SÜRE SAYACI
+    // =====================================================
+
     useEffect(() => {
 
-        const countdownId =
-            setInterval(() => {
+        const interval =
+            setInterval(
+                () => {
 
-                setRemainingSeconds(
+                    setRemainingSeconds(
+                        previous => {
 
-                    previousSeconds => {
+                            if (previous === null) {
+                                return null;
+                            }
 
-                        if (previousSeconds === null) {
-
-                            return previousSeconds;
+                            return Math.max(
+                                0,
+                                previous - 1
+                            );
                         }
+                    );
 
-
-                        if (previousSeconds <= 0) {
-
-                            return 0;
-                        }
-
-
-                        return previousSeconds - 1;
-                    }
-                );
-
-            }, 1000);
-
-
-        return () => {
-
-            clearInterval(
-                countdownId
+                },
+                1000
             );
-        };
+
+
+        return () =>
+            clearInterval(
+                interval
+            );
 
     }, []);
 
-// sol panelden araç seç
-    const selectVehicle =
-        (vehicleId) => {
 
-            setSelectedVehicleId(
-                vehicleId
-            );
+    // =====================================================
+    // ARAÇ SEÇİMİ
+    // =====================================================
 
+    function selectVehicle(vehicleId) {
 
-            // Önceki aracın kalan mesafe/süre bilgisi
-            // yeni seçilen araçta kısa süreli görünmesin.
-            setRemainingDistance(null);
-
-            setRemainingSeconds(null);
-        };
-
-    const selectedConfig =
-        VEHICLE_CONFIGS.find(
-
-            vehicle =>
-                vehicle.id === selectedVehicleId
+        setSelectedVehicleId(
+            vehicleId
         );
 
+        setRemainingDistance(
+            null
+        );
 
-    const selectedVehicle =
-        vehicles[selectedVehicleId];
+        setRemainingSeconds(
+            null
+        );
+    }
+
+
+    // =====================================================
+    // DURUM EKRANLARI
+    // =====================================================
 
     if (error) {
 
@@ -667,7 +902,26 @@ function App() {
     }
 
 
-    if (!selectedVehicle) {
+    if (vehicleConfigs.length === 0) {
+
+        return (
+
+            <div className="status-message">
+
+                <h2>
+                    Araç rotaları oluşturuluyor...
+                </h2>
+
+            </div>
+        );
+    }
+
+
+    if (
+        !selectedVehicle
+        ||
+        !selectedConfig
+    ) {
 
         return (
 
@@ -680,6 +934,11 @@ function App() {
             </div>
         );
     }
+
+
+    // =====================================================
+    // ARAYÜZ
+    // =====================================================
 
     return (
 
@@ -703,7 +962,15 @@ function App() {
 
 
             <main className="dashboard">
+
+
+                {/* ================================================= */}
+                {/* SOL PANEL */}
+                {/* ================================================= */}
+
                 <section className="vehicle-panel">
+
+
                     <div className="panel-header">
 
                         <h2>
@@ -713,90 +980,87 @@ function App() {
 
                         <div className="live-badge">
 
-                            <span className="live-dot"></span>
+                            <span className="live-dot"/>
 
                             CANLI
 
                         </div>
 
                     </div>
+
+
+                    {/* ARAÇ SEÇİMİ */}
+
                     <div className="vehicle-selector-list">
 
+                        {vehicleConfigs.map(
+                            config => {
 
-                        {VEHICLE_CONFIGS.map(config => {
+                                const vehicle =
+                                    vehicles[
+                                        config.id
+                                        ];
 
-                            const vehicle =
-                                vehicles[config.id];
-
-
-                            const isSelected =
-                                config.id
-                                ===
-                                selectedVehicleId;
-
-
-                            return (
-
-                                <button
-
-                                    key={config.id}
-
-                                    className={
-
-                                        isSelected
-
-                                            ? "vehicle-selector active"
-
-                                            : "vehicle-selector"
-                                    }
-
-                                    onClick={() =>
-                                        selectVehicle(
-                                            config.id
-                                        )
-                                    }
-                                >
+                                const active =
+                                    config.id
+                                    ===
+                                    selectedVehicleId;
 
 
-                                    <div>
+                                return (
 
-                                        <strong>
-                                            {config.plate}
-                                        </strong>
+                                    <button
+                                        key={config.id}
+
+                                        className={
+                                            active
+                                                ? "vehicle-selector active"
+                                                : "vehicle-selector"
+                                        }
+
+                                        onClick={
+                                            () =>
+                                                selectVehicle(
+                                                    config.id
+                                                )
+                                        }
+                                    >
+
+                                        <div>
+
+                                            <strong>
+                                                {config.plate}
+                                            </strong>
+
+                                            <span>
+                                                {config.startCity}
+                                                {" → "}
+                                                {config.destinationCity}
+                                            </span>
+
+                                        </div>
 
 
-                                        <span>
+                                        <span className="selector-speed">
 
-                                            {config.startCity}
-
-                                            {" → "}
-
-                                            {config.destinationCity}
+                                            {
+                                                formatSpeed(
+                                                    vehicle?.speed
+                                                )
+                                            }
 
                                         </span>
 
-                                    </div>
-
-
-                                    <span className="selector-speed">
-
-                                        {
-                                            vehicle
-
-                                                ? `${vehicle.speed} km/h`
-
-                                                : "-"
-                                        }
-
-                                    </span>
-
-
-                                </button>
-                            );
-                        })}
-
+                                    </button>
+                                );
+                            }
+                        )}
 
                     </div>
+
+
+                    {/* SEÇİLİ ARAÇ */}
+
                     <div className="selected-vehicle-title">
 
                         Seçili Araç
@@ -806,20 +1070,14 @@ function App() {
 
                     <div className="vehicle-summary">
 
-
                         <div>
 
                             <span className="summary-label">
-
                                 Araç
-
                             </span>
 
-
                             <strong className="vehicle-id">
-
                                 {selectedConfig.plate}
-
                             </strong>
 
                         </div>
@@ -831,19 +1089,24 @@ function App() {
                                 Hız
                             </span>
 
-
                             <strong>
 
-                                {selectedVehicle.speed} km/h
+                                {
+                                    formatSpeed(
+                                        selectedVehicle.speed
+                                    )
+                                }
 
                             </strong>
 
                         </div>
 
-
                     </div>
-                    <div className="route-summary">
 
+
+                    {/* KALKIŞ / VARIŞ */}
+
+                    <div className="route-summary">
 
                         <div>
 
@@ -859,9 +1122,7 @@ function App() {
 
 
                         <div className="route-arrow">
-
                             →
-
                         </div>
 
 
@@ -877,19 +1138,18 @@ function App() {
 
                         </div>
 
-
                     </div>
 
 
-                    <div className="stats-grid">
+                    {/* MESAFE / VARIŞ */}
 
+                    <div className="stats-grid">
 
                         <div className="stat-card">
 
                             <span>
                                 Kalan Mesafe
                             </span>
-
 
                             <strong>
 
@@ -914,7 +1174,6 @@ function App() {
                                 Tahmini Varış
                             </span>
 
-
                             <strong>
 
                                 {
@@ -927,20 +1186,14 @@ function App() {
 
                         </div>
 
-
                     </div>
 
-
-                    {/* ===================================== */}
-                    {/* KALAN SÜRE */}
-                    {/* ===================================== */}
 
                     <div className="countdown-card">
 
                         <span>
                             Kalan Süre
                         </span>
-
 
                         <strong>
 
@@ -955,16 +1208,11 @@ function App() {
                     </div>
 
 
-                    {/* ===================================== */}
-                    {/* SON GÜNCELLEME */}
-                    {/* ===================================== */}
-
                     <div className="last-update">
 
                         <span>
                             Son güncelleme
                         </span>
-
 
                         <strong>
 
@@ -978,379 +1226,254 @@ function App() {
 
                     </div>
 
-
                 </section>
 
 
-                {/* ========================================= */}
+                {/* ================================================= */}
                 {/* HARİTA */}
-                {/* ========================================= */}
+                {/* ================================================= */}
 
                 <section className="map-panel">
 
-
                     <MapContainer
-
                         center={turkeyCenter}
-
                         zoom={6}
-
                         scrollWheelZoom={true}
-
                         className="map"
                     >
 
-
                         <TileLayer
-
                             attribution="&copy; OpenStreetMap contributors"
-
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
 
 
-                        {/* ================================= */}
-                        {/* ÜÇ ARACIN PLANLANAN ROTASI */}
-                        {/* ================================= */}
-                        {/*
-                            Sol panelde hangi araç seçilirse
-                            seçilsin üç mavi rota da görünür.
-                        */}
+                        {vehicleConfigs.map(
+                            config => {
 
-                        {VEHICLE_CONFIGS.map(config => {
+                                const route =
+                                    plannedRoutes[
+                                        config.id
+                                        ]
+                                    ||
+                                    [];
 
-                            const route =
-                                plannedRoutes[config.id]
-                                ||
-                                [];
 
+                                const vehicle =
+                                    vehicles[
+                                        config.id
+                                        ];
 
-                            if (route.length <= 1) {
 
-                                return null;
-                            }
+                                if (route.length === 0) {
+                                    return null;
+                                }
 
 
-                            return (
+                                const startPoint =
+                                    route[0];
 
-                                <Polyline
 
-                                    key={`planned-${config.id}`}
+                                const destinationPoint =
+                                    route[
+                                    route.length - 1
+                                        ];
 
-                                    positions={route}
 
-                                    pathOptions={{
+                                let traveledRoute =
+                                    [];
 
-                                        color: "#2563eb",
 
-                                        weight: 4,
+                                /*
+                                 * Araç Kafka'dan gelen gerçek
+                                 * konuma geçtiyse kırmızı geçmiş
+                                 * rotayı oluştur.
+                                 */
+                                if (
+                                    vehicle
+                                    &&
+                                    !vehicle.isPlaceholder
+                                ) {
 
-                                        opacity: 0.7
-                                    }}
-                                />
-                            );
-                        })}
+                                    const currentIndex =
+                                        findClosestRouteIndex(
 
+                                            route,
 
-                        {/* ================================= */}
-                        {/* ÜÇ ARACIN GEÇTİĞİ ROTA */}
-                        {/* ================================= */}
-                        {/*
-                            Her araç için ayrı ayrı
-                            başlangıçtan güncel konuma kadar
-                            kırmızı çizgi oluşturuyoruz.
-                        */}
+                                            vehicle.latitude,
 
-                        {VEHICLE_CONFIGS.map(config => {
+                                            vehicle.longitude
+                                        );
 
-                            const vehicle =
-                                vehicles[config.id];
 
+                                    traveledRoute =
+                                        route.slice(
+                                            0,
+                                            currentIndex + 1
+                                        );
+                                }
 
-                            const route =
-                                plannedRoutes[config.id]
-                                ||
-                                [];
 
+                                return (
 
-                            if (
-                                !vehicle
-                                ||
-                                route.length <= 1
-                            ) {
-
-                                return null;
-                            }
-
-
-                            // Aracın güncel konumuna
-                            // en yakın rota noktasını buluyoruz.
-                            const currentRouteIndex =
-                                findClosestRouteIndex(
-
-                                    route,
-
-                                    vehicle.latitude,
-
-                                    vehicle.longitude
-                                );
-
-
-                            // Başlangıçtan güncel konuma kadar
-                            // olan rotayı alıyoruz.
-                            const traveledRoute =
-                                route.slice(
-
-                                    0,
-
-                                    currentRouteIndex + 1
-                                );
-
-
-                            if (traveledRoute.length <= 1) {
-
-                                return null;
-                            }
-
-
-                            return (
-
-                                <Polyline
-
-                                    key={`traveled-${config.id}`}
-
-                                    positions={traveledRoute}
-
-                                    pathOptions={{
-
-                                        color: "#dc2626",
-
-                                        weight: 5,
-
-                                        opacity: 0.9
-                                    }}
-                                />
-                            );
-                        })}
-
-
-                        {/* ================================= */}
-                        {/* ÜÇ ARACIN BAŞLANGIÇ / VARIŞI */}
-                        {/* ================================= */}
-
-                        {VEHICLE_CONFIGS.map(config => {
-
-                            const route =
-                                plannedRoutes[config.id]
-                                ||
-                                [];
-
-
-                            if (route.length === 0) {
-
-                                return null;
-                            }
-
-
-                            // OSRM rotasının ilk noktası.
-                            const startPoint =
-                                route[0];
-
-
-                            // OSRM rotasının son noktası.
-                            const destinationPoint =
-                                route[
-                                route.length - 1
-                                    ];
-
-
-                            return (
-
-                                <Fragment
-                                    key={`points-${config.id}`}
-                                >
-
-
-                                    {/* Başlangıç noktası */}
-
-                                    <CircleMarker
-
-                                        center={startPoint}
-
-                                        radius={7}
-
-                                        pathOptions={{
-
-                                            color: "#15803d",
-
-                                            fillColor: "#22c55e",
-
-                                            fillOpacity: 1,
-
-                                            weight: 2
-                                        }}
+                                    <Fragment
+                                        key={config.id}
                                     >
 
 
-                                        <Popup>
+                                        {/* PLANLANAN ROTA */}
 
-                                            <strong>
+                                        <Polyline
+                                            positions={route}
 
-                                                {config.startCity}
+                                            pathOptions={{
+                                                color: "#2563eb",
+                                                weight: 4,
+                                                opacity: 0.7
+                                            }}
+                                        />
 
-                                            </strong>
 
-
-                                            <br/>
-
-
-                                            {config.plate}
-
-
-                                            <br/>
-
-
-                                            Başlangıç Noktası
-
-                                        </Popup>
-
-
-                                    </CircleMarker>
-
-
-                                    {/* Varış noktası */}
-
-                                    <Marker
-
-                                        position={
-                                            destinationPoint
-                                        }
-                                    >
-
-
-                                        <Popup>
-
-                                            <strong>
-
-                                                {config.destinationCity}
-
-                                            </strong>
-
-
-                                            <br/>
-
-
-                                            {config.plate}
-
-
-                                            <br/>
-
-
-                                            Varış Noktası
-
-                                        </Popup>
-
-
-                                    </Marker>
-
-
-                                </Fragment>
-                            );
-                        })}
-
-
-                        {/* ================================= */}
-                        {/* ÜÇ ARAÇ AYNI ANDA HARİTADA */}
-                        {/* ================================= */}
-                        {/*
-                            Sol panelde seçim yapmak
-                            buradaki araçları etkilemez.
-                        */}
-
-                        {VEHICLE_CONFIGS.map(config => {
-
-                            const vehicle =
-                                vehicles[config.id];
-
-
-                            if (!vehicle) {
-
-                                return null;
-                            }
-
-
-                            return (
-
-                                <Marker
-
-                                    key={`vehicle-${config.id}`}
-
-                                    position={[
-
-                                        vehicle.latitude,
-
-                                        vehicle.longitude
-                                    ]}
-
-                                    icon={carIcon}
-                                >
-
-
-                                    <Popup>
-
-
-                                        <strong>
-
-                                            {config.plate}
-
-                                        </strong>
-
-
-                                        <br/>
-
-
-                                        {config.startCity}
-
-                                        {" → "}
-
-                                        {config.destinationCity}
-
-
-                                        <br/>
-
-
-                                        Hız: {vehicle.speed} km/h
-
-
-                                        <br/>
-
-
-                                        Son Güncelleme:{" "}
-
+                                        {/* GİDİLEN ROTA */}
 
                                         {
-                                            formatTimestamp(
-                                                vehicle.timestamp
-                                            )
+                                            traveledRoute.length > 1
+                                            &&
+                                            <Polyline
+                                                positions={
+                                                    traveledRoute
+                                                }
+
+                                                pathOptions={{
+                                                    color: "#dc2626",
+                                                    weight: 5,
+                                                    opacity: 0.9
+                                                }}
+                                            />
                                         }
 
 
-                                    </Popup>
+                                        {/* BAŞLANGIÇ */}
+
+                                        <CircleMarker
+                                            center={startPoint}
+                                            radius={7}
+
+                                            pathOptions={{
+                                                color: "#15803d",
+                                                fillColor: "#22c55e",
+                                                fillOpacity: 1,
+                                                weight: 2
+                                            }}
+                                        >
+
+                                            <Popup>
+
+                                                <strong>
+                                                    {config.startCity}
+                                                </strong>
+
+                                                <br/>
+
+                                                {config.plate}
+
+                                                <br/>
+
+                                                Başlangıç Noktası
+
+                                            </Popup>
+
+                                        </CircleMarker>
 
 
-                                </Marker>
-                            );
-                        })}
+                                        {/* VARIŞ */}
 
+                                        <Marker
+                                            position={
+                                                destinationPoint
+                                            }
+                                        >
+
+                                            <Popup>
+
+                                                <strong>
+                                                    {config.destinationCity}
+                                                </strong>
+
+                                                <br/>
+
+                                                {config.plate}
+
+                                                <br/>
+
+                                                Varış Noktası
+
+                                            </Popup>
+
+                                        </Marker>
+
+
+                                        {/* ARAÇ */}
+
+                                        {
+                                            vehicle
+                                            &&
+                                            <Marker
+                                                position={[
+                                                    vehicle.latitude,
+                                                    vehicle.longitude
+                                                ]}
+
+                                                icon={
+                                                    carIcon
+                                                }
+                                            >
+
+                                                <Popup>
+
+                                                    <strong>
+                                                        {config.plate}
+                                                    </strong>
+
+                                                    <br/>
+
+                                                    {config.startCity}
+                                                    {" → "}
+                                                    {config.destinationCity}
+
+                                                    <br/>
+
+                                                    Hız: {
+                                                    formatSpeed(
+                                                        vehicle.speed
+                                                    )
+                                                }
+
+                                                    <br/>
+
+                                                    Son Güncelleme:{" "}
+
+                                                    {
+                                                        formatTimestamp(
+                                                            vehicle.timestamp
+                                                        )
+                                                    }
+
+                                                </Popup>
+
+                                            </Marker>
+                                        }
+
+                                    </Fragment>
+                                );
+                            }
+                        )}
 
                     </MapContainer>
 
-
                 </section>
 
-
             </main>
-
 
         </div>
     );

@@ -1,5 +1,7 @@
 package com.example.vehicletrackingbackend.service;
 
+import com.example.vehicletrackingbackend.dto.RandomRoutePoint;
+import com.example.vehicletrackingbackend.dto.VehicleRouteInfo;
 import com.example.vehicletrackingbackend.event.LocationEvent;
 import com.example.vehicletrackingbackend.kafka.LocationProducer;
 
@@ -7,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -15,101 +18,189 @@ import java.util.Random;
 public class VehicleSimulatorService {
 
     private final RouteService routeService;
+    private final RandomRouteService randomRouteService;
     private final LocationProducer locationProducer;
 
     private final Random random = new Random();
 
-
-    // Simülasyonda takip edeceğimiz araçlar.
-    private final List<VehicleSimulation> vehicles = List.of(
-
-            // CAR-101: İstanbul → Bolu
-            new VehicleSimulation(
-                    "CAR-101",
-                    41.0082,   // İstanbul latitude
-                    28.9784,   // İstanbul longitude
-                    40.7350,   // Bolu latitude
-                    31.6066,   // Bolu longitude
-                    70
-            ),
-
-            // CAR-102: Ankara → Konya
-            new VehicleSimulation(
-                    "CAR-102",
-                    39.9334,
-                    32.8597,
-                    37.8746,
-                    32.4932,
-                    65
-            ),
-
-            // CAR-103: İzmir → Antalya
-            new VehicleSimulation(
-                    "CAR-103",
-                    38.4237,
-                    27.1428,
-                    36.8969,
-                    30.7133,
-                    75
-            )
-    );
+    private final List<VehicleSimulation> vehicles =
+            new ArrayList<>();
 
 
     public VehicleSimulatorService(
             RouteService routeService,
+            RandomRouteService randomRouteService,
             LocationProducer locationProducer
     ) {
 
         this.routeService = routeService;
+        this.randomRouteService = randomRouteService;
         this.locationProducer = locationProducer;
     }
 
 
+    // =====================================================
+    // YENİ SİMÜLASYON
+    // =====================================================
+
+    public synchronized void resetSimulation() {
+
+        vehicles.clear();
+
+
+        // Her araç kendi bölgesinde çalışır.
+        vehicles.add(
+                createVehicle(
+                        "CAR-101",
+                        70,
+                        RandomRouteService.Region.WEST
+                )
+        );
+
+
+        vehicles.add(
+                createVehicle(
+                        "CAR-102",
+                        65,
+                        RandomRouteService.Region.CENTRAL
+                )
+        );
+
+
+        vehicles.add(
+                createVehicle(
+                        "CAR-103",
+                        75,
+                        RandomRouteService.Region.EAST
+                )
+        );
+
+
+        System.out.println(
+                "Yeni simülasyon oluşturuldu."
+        );
+
+
+        for (VehicleSimulation vehicle : vehicles) {
+
+            System.out.println(
+                    vehicle.vehicleId
+                            + " | "
+                            + vehicle.startPoint.getLocationName()
+                            + " → "
+                            + vehicle.destinationPoint.getLocationName()
+            );
+        }
+    }
+
+
+    // =====================================================
+    // TEK ARAÇ OLUŞTUR
+    // =====================================================
+
+    private VehicleSimulation createVehicle(
+            String vehicleId,
+            double speed,
+            RandomRouteService.Region region
+    ) {
+
+        // Bölgeden rastgele başlangıç şehri.
+        RandomRoutePoint startPoint =
+                randomRouteService.getRandomPoint(
+                        region
+                );
+
+
+        RandomRoutePoint destinationPoint;
+
+
+        // Başlangıç ve varış aynı şehir olmasın.
+        do {
+
+            destinationPoint =
+                    randomRouteService.getRandomPoint(
+                            region
+                    );
+
+        }
+        while (
+                startPoint.getLocationName()
+                        .equals(
+                                destinationPoint.getLocationName()
+                        )
+        );
+
+
+        // OSRM gerçek yol rotasını oluşturur.
+        List<List<Double>> routeCoordinates =
+                routeService.getRouteCoordinates(
+
+                        startPoint.getLatitude(),
+                        startPoint.getLongitude(),
+
+                        destinationPoint.getLatitude(),
+                        destinationPoint.getLongitude()
+                );
+
+
+        return new VehicleSimulation(
+                vehicleId,
+                startPoint,
+                destinationPoint,
+                routeCoordinates,
+                speed
+        );
+    }
+
+
+    // =====================================================
+    // ARAÇLARI HAREKET ETTİR
+    // =====================================================
+
     @Scheduled(fixedDelay = 1000)
-    // Demo için her 1 saniyede bir araçların konumu güncellenir.
-    public void simulateVehicleMovement() {
+    public synchronized void simulateVehicleMovement() {
+
+        if (vehicles.isEmpty()) {
+            return;
+        }
+
+
         for (VehicleSimulation vehicle : vehicles) {
 
             moveVehicle(vehicle);
         }
     }
 
-    private void moveVehicle(VehicleSimulation vehicle) {
-        if (vehicle.routeCoordinates == null) {
 
-            vehicle.routeCoordinates =
-                    routeService.getRouteCoordinates(
+    // =====================================================
+    // TEK ARACI HAREKET ETTİR
+    // =====================================================
 
-                            vehicle.startLatitude,
-                            vehicle.startLongitude,
+    private void moveVehicle(
+            VehicleSimulation vehicle
+    ) {
 
-                            vehicle.destinationLatitude,
-                            vehicle.destinationLongitude
-                    );
-
-
-            System.out.println(
-                    vehicle.vehicleId
-                            + " rotası alındı. Toplam koordinat: "
-                            + vehicle.routeCoordinates.size()
-            );
-        }
-
-        if (vehicle.currentIndex >= vehicle.routeCoordinates.size()) {
+        // Araç rotayı tamamladıysa dur.
+        if (
+                vehicle.currentIndex
+                        >=
+                        vehicle.routeCoordinates.size()
+        ) {
 
             return;
         }
 
 
-        // Aracın o an bulunduğu rota noktasını alıyoruz.
+        /*
+         * OSRM koordinatı:
+         * [longitude, latitude]
+         */
         List<Double> coordinate =
                 vehicle.routeCoordinates.get(
                         vehicle.currentIndex
                 );
 
 
-        // OSRM koordinat sırası:
-        // longitude, latitude
         double longitude =
                 coordinate.get(0);
 
@@ -117,39 +208,22 @@ public class VehicleSimulatorService {
                 coordinate.get(1);
 
 
-        // Aracın güncel konum eventi.
+        // Aracın anlık konum eventi.
         LocationEvent event =
                 new LocationEvent(
-
                         vehicle.vehicleId,
-
                         latitude,
-
                         longitude,
-
                         vehicle.currentSpeed,
-
                         LocalDateTime.now()
                 );
 
 
-        // Konum eventini Kafka'ya gönderiyoruz.
+        // Kafka topic'ine publish edilir.
         locationProducer.sendLocation(event);
 
 
-        System.out.println(
-                vehicle.vehicleId
-                        + " hareket etti"
-                        + " | Index: " + vehicle.currentIndex
-                        + " | Lat: " + latitude
-                        + " | Lon: " + longitude
-                        + " | Hız: " + vehicle.currentSpeed
-                        + " km/h"
-        );
-
-
-        // Eğer araç son koordinata geldiyse
-        // varış noktasına ulaşmıştır.
+        // Araç son noktaya ulaştıysa dur.
         if (
                 vehicle.currentIndex
                         ==
@@ -157,14 +231,12 @@ public class VehicleSimulatorService {
         ) {
 
             System.out.println(
-                    " "
-                            + vehicle.vehicleId
-                            + " VARIŞ NOKTASINA ULAŞTI."
+                    vehicle.vehicleId
+                            + " varış noktasına ulaştı: "
+                            + vehicle.destinationPoint.getLocationName()
             );
 
 
-            // Bir sonraki çalışmada tekrar event göndermemesi için
-            // index'i listenin dışına çıkarıyoruz.
             vehicle.currentIndex =
                     vehicle.routeCoordinates.size();
 
@@ -172,20 +244,10 @@ public class VehicleSimulatorService {
         }
 
 
-        // =================================================
-        // DEMO HIZLANDIRMA
-        // =================================================
-        //
-        // Normalde:
-        //
-        // currentIndex++;
-        //
-        // diyerek her saniye sadece 1 rota noktası ilerliyorduk.
-        //
-        // Demo sırasında rotayı yaklaşık 30 saniyede
-        // tamamlamak için her seferinde rotanın
-        // yaklaşık 1/30'u kadar ilerliyoruz.
-
+        /*
+         * Demo sırasında rota yaklaşık
+         * 30 saniyede tamamlansın.
+         */
         int stepSize =
                 Math.max(
                         1,
@@ -196,173 +258,119 @@ public class VehicleSimulatorService {
                 );
 
 
-        // Son koordinatı geçmemesi için
-        // Math.min kullanıyoruz.
         vehicle.currentIndex =
                 Math.min(
-
-                        vehicle.currentIndex
-                                +
-                                stepSize,
-
+                        vehicle.currentIndex + stepSize,
                         vehicle.routeCoordinates.size() - 1
                 );
     }
 
-    // Sayfa yenilendiğinde bütün araçları
-// başlangıç noktasına döndürür.
-    public void resetSimulation() {
+
+    // =====================================================
+    // FRONTEND'E ROTA BİLGİLERİNİ VER
+    // =====================================================
+
+    public synchronized List<VehicleRouteInfo> getCurrentRoutes() {
+
+        List<VehicleRouteInfo> routes =
+                new ArrayList<>();
+
 
         for (VehicleSimulation vehicle : vehicles) {
 
-            // Aracı rotanın ilk noktasına döndür.
-            vehicle.currentIndex = 0;
+            routes.add(
+                    new VehicleRouteInfo(
 
-            // Hızı tekrar başlangıç değerine getir.
-            if (vehicle.vehicleId.equals("CAR-101")) {
-                vehicle.currentSpeed = 70;
-            }
+                            vehicle.vehicleId,
 
-            if (vehicle.vehicleId.equals("CAR-102")) {
-                vehicle.currentSpeed = 65;
-            }
+                            vehicle.startPoint.getLocationName(),
+                            vehicle.startPoint.getLatitude(),
+                            vehicle.startPoint.getLongitude(),
 
-            if (vehicle.vehicleId.equals("CAR-103")) {
-                vehicle.currentSpeed = 75;
-            }
+                            vehicle.destinationPoint.getLocationName(),
+                            vehicle.destinationPoint.getLatitude(),
+                            vehicle.destinationPoint.getLongitude()
+                    )
+            );
         }
 
-        System.out.println(
-                " Simülasyon baştan başlatıldı."
-        );
+
+        return routes;
     }
+
+
+    // =====================================================
+    // RASTGELE HIZ DEĞİŞİMİ
+    // =====================================================
 
     @Scheduled(
             fixedRate = 15000,
             initialDelay = 15000
     )
-    public void changeVehicleSpeeds() {
+    public synchronized void changeVehicleSpeeds() {
 
         for (VehicleSimulation vehicle : vehicles) {
 
-            changeSpeed(vehicle);
+            if (
+                    vehicle.currentIndex
+                            >=
+                            vehicle.routeCoordinates.size()
+            ) {
+
+                continue;
+            }
+
+
+            // -8 ile +8 arasında değişim.
+            vehicle.currentSpeed +=
+                    random.nextInt(17) - 8;
+
+
+            // Hız 50 - 100 km/h arasında kalır.
+            vehicle.currentSpeed =
+                    Math.max(
+                            50,
+                            Math.min(
+                                    100,
+                                    vehicle.currentSpeed
+                            )
+                    );
         }
     }
 
 
     // =====================================================
-    // TEK BİR ARACIN HIZINI DEĞİŞTİR
-    // =====================================================
-
-    private void changeSpeed(VehicleSimulation vehicle) {
-
-        // Araç rotayı bitirdiyse
-        // artık hızını değiştirmiyoruz.
-        if (
-                vehicle.routeCoordinates != null
-                        &&
-                        vehicle.currentIndex
-                                >=
-                                vehicle.routeCoordinates.size()
-        ) {
-
-            return;
-        }
-
-
-        // -8 ile +8 km/h arasında
-        // rastgele değişim oluşturur.
-        int speedChange =
-                random.nextInt(17) - 8;
-
-
-        vehicle.currentSpeed =
-                vehicle.currentSpeed
-                        +
-                        speedChange;
-
-
-        // Minimum 50 km/h.
-        if (vehicle.currentSpeed < 50) {
-
-            vehicle.currentSpeed = 50;
-        }
-
-
-        // Maksimum 100 km/h.
-        if (vehicle.currentSpeed > 100) {
-
-            vehicle.currentSpeed = 100;
-        }
-
-
-        System.out.println(
-                vehicle.vehicleId
-                        + " hızı değişti -> "
-                        + vehicle.currentSpeed
-                        + " km/h"
-        );
-    }
-
-
-    // =====================================================
-    // ARAÇ SİMÜLASYON BİLGİLERİ
+    // ARAÇ SİMÜLASYON DURUMU
     // =====================================================
 
     private static class VehicleSimulation {
 
-        // Aracın sistemdeki benzersiz kimliği.
         private final String vehicleId;
 
+        private final RandomRoutePoint startPoint;
 
-        // Başlangıç noktası.
-        private final double startLatitude;
-        private final double startLongitude;
+        private final RandomRoutePoint destinationPoint;
 
+        private final List<List<Double>> routeCoordinates;
 
-        // Varış noktası.
-        private final double destinationLatitude;
-        private final double destinationLongitude;
-
-
-        // OSRM'den gelen rota koordinatları.
-        private List<List<Double>> routeCoordinates;
-
-
-        // Aracın rota üzerindeki güncel noktası.
         private int currentIndex = 0;
 
-
-        // Aracın ekranda gösterilen anlık hızı.
         private double currentSpeed;
 
 
         public VehicleSimulation(
                 String vehicleId,
-                double startLatitude,
-                double startLongitude,
-                double destinationLatitude,
-                double destinationLongitude,
+                RandomRoutePoint startPoint,
+                RandomRoutePoint destinationPoint,
+                List<List<Double>> routeCoordinates,
                 double currentSpeed
         ) {
 
-            this.vehicleId =
-                    vehicleId;
-
-            this.startLatitude =
-                    startLatitude;
-
-            this.startLongitude =
-                    startLongitude;
-
-            this.destinationLatitude =
-                    destinationLatitude;
-
-            this.destinationLongitude =
-                    destinationLongitude;
-
-            this.currentSpeed =
-                    currentSpeed;
+            this.vehicleId = vehicleId;
+            this.startPoint = startPoint;
+            this.destinationPoint = destinationPoint;
+            this.routeCoordinates = routeCoordinates;
+            this.currentSpeed = currentSpeed;
         }
     }
 }
