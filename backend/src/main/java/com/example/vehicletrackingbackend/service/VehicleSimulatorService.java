@@ -17,198 +17,122 @@ import java.util.Random;
 @Service
 public class VehicleSimulatorService {
 
+    private static final int MIN_INITIAL_SPEED = 60;
+    private static final int MAX_INITIAL_SPEED = 80;
+
+    private static final int MIN_SPEED = 50;
+    private static final int MAX_SPEED = 100;
+
+    private static final int SPEED_CHANGE_LIMIT = 8;
+    private static final int ROUTE_STEP_COUNT = 30;
+
     private final RouteService routeService;
     private final RandomRouteService randomRouteService;
     private final LocationProducer locationProducer;
 
     private final Random random = new Random();
 
-    private final List<VehicleSimulation> vehicles =
-            new ArrayList<>();
-
+    private final List<VehicleSimulation> vehicles = new ArrayList<>();
 
     public VehicleSimulatorService(
             RouteService routeService,
             RandomRouteService randomRouteService,
             LocationProducer locationProducer
     ) {
-
         this.routeService = routeService;
         this.randomRouteService = randomRouteService;
         this.locationProducer = locationProducer;
     }
 
 
-    // =====================================================
-    // YENİ SİMÜLASYON
-    // =====================================================
-
+    // Yeni simülasyon oluşturur.
     public synchronized void resetSimulation() {
 
         vehicles.clear();
 
+        vehicles.add(createVehicle("CAR-101", RandomRouteService.Region.WEST));
 
-        // Her araç kendi bölgesinde çalışır.
-        vehicles.add(
-                createVehicle(
-                        "CAR-101",
-                        70,
-                        RandomRouteService.Region.WEST
-                )
-        );
+        vehicles.add(createVehicle("CAR-102", RandomRouteService.Region.CENTRAL));
 
+        vehicles.add(createVehicle("CAR-103", RandomRouteService.Region.EAST));
 
-        vehicles.add(
-                createVehicle(
-                        "CAR-102",
-                        65,
-                        RandomRouteService.Region.CENTRAL
-                )
-        );
-
-
-        vehicles.add(
-                createVehicle(
-                        "CAR-103",
-                        75,
-                        RandomRouteService.Region.EAST
-                )
-        );
-
-
-        System.out.println(
-                "Yeni simülasyon oluşturuldu."
-        );
-
+        System.out.println("Yeni simülasyon oluşturuldu.");
 
         for (VehicleSimulation vehicle : vehicles) {
-
             System.out.println(
                     vehicle.vehicleId
                             + " | "
                             + vehicle.startPoint.getLocationName()
                             + " → "
                             + vehicle.destinationPoint.getLocationName()
+                            + " | "
+                            + Math.round(vehicle.currentSpeed)
+                            + " km/h"
             );
         }
     }
 
 
-    // =====================================================
-    // TEK ARAÇ OLUŞTUR
-    // =====================================================
+    // Araç için rastgele başlangıç, varış ve hız oluşturur.
+    private VehicleSimulation createVehicle(String vehicleId, RandomRouteService.Region region) {
 
-    private VehicleSimulation createVehicle(
-            String vehicleId,
-            double speed,
-            RandomRouteService.Region region
-    ) {
-
-        // Bölgeden rastgele başlangıç şehri.
-        RandomRoutePoint startPoint =
-                randomRouteService.getRandomPoint(
-                        region
-                );
-
-
+        RandomRoutePoint startPoint = randomRouteService.getRandomPoint(region);
         RandomRoutePoint destinationPoint;
 
 
-        // Başlangıç ve varış aynı şehir olmasın.
         do {
+            destinationPoint = randomRouteService.getRandomPoint(region);
 
-            destinationPoint =
-                    randomRouteService.getRandomPoint(
-                            region
-                    );
-
-        }
-        while (
-                startPoint.getLocationName()
-                        .equals(
-                                destinationPoint.getLocationName()
-                        )
+        } while (startPoint.getLocationName().equals(destinationPoint.getLocationName())
         );
 
 
-        // OSRM gerçek yol rotasını oluşturur.
         List<List<Double>> routeCoordinates =
                 routeService.getRouteCoordinates(
-
                         startPoint.getLatitude(),
                         startPoint.getLongitude(),
-
                         destinationPoint.getLatitude(),
                         destinationPoint.getLongitude()
                 );
-
 
         return new VehicleSimulation(
                 vehicleId,
                 startPoint,
                 destinationPoint,
                 routeCoordinates,
-                speed
+                randomInitialSpeed()
         );
     }
 
+    // Başlangıç hızını 60-80 km/h arasında üretir.
+    private double randomInitialSpeed() {
 
-    // =====================================================
-    // ARAÇLARI HAREKET ETTİR
-    // =====================================================
+        return MIN_INITIAL_SPEED + random.nextInt(MAX_INITIAL_SPEED - MIN_INITIAL_SPEED + 1);
+    }
 
+    // Araçları her saniye rota üzerinde ilerletir.
     @Scheduled(fixedDelay = 1000)
     public synchronized void simulateVehicleMovement() {
 
-        if (vehicles.isEmpty()) {
-            return;
-        }
-
-
         for (VehicleSimulation vehicle : vehicles) {
-
             moveVehicle(vehicle);
         }
     }
 
 
-    // =====================================================
-    // TEK ARACI HAREKET ETTİR
-    // =====================================================
+    private void moveVehicle(VehicleSimulation vehicle) {
 
-    private void moveVehicle(
-            VehicleSimulation vehicle
-    ) {
-
-        // Araç rotayı tamamladıysa dur.
-        if (
-                vehicle.currentIndex
-                        >=
-                        vehicle.routeCoordinates.size()
-        ) {
-
+        if (vehicle.currentIndex >= vehicle.routeCoordinates.size()) {
             return;
         }
 
+        List<Double> coordinate = vehicle.routeCoordinates.get(vehicle.currentIndex);
 
-        /*
-         * OSRM koordinatı:
-         * [longitude, latitude]
-         */
-        List<Double> coordinate =
-                vehicle.routeCoordinates.get(
-                        vehicle.currentIndex
-                );
+        // OSRM koordinat sırası: longitude, latitude
+        double longitude = coordinate.get(0);
+        double latitude = coordinate.get(1);
 
 
-        double longitude =
-                coordinate.get(0);
-
-        double latitude =
-                coordinate.get(1);
-
-
-        // Aracın anlık konum eventi.
         LocationEvent event =
                 new LocationEvent(
                         vehicle.vehicleId,
@@ -219,16 +143,10 @@ public class VehicleSimulatorService {
                 );
 
 
-        // Kafka topic'ine publish edilir.
+        // LocationEvent Kafka topic'ine publish edilir.
         locationProducer.sendLocation(event);
 
-
-        // Araç son noktaya ulaştıysa dur.
-        if (
-                vehicle.currentIndex
-                        ==
-                        vehicle.routeCoordinates.size() - 1
-        ) {
+        if (vehicle.currentIndex == vehicle.routeCoordinates.size() - 1) {
 
             System.out.println(
                     vehicle.vehicleId
@@ -236,51 +154,25 @@ public class VehicleSimulatorService {
                             + vehicle.destinationPoint.getLocationName()
             );
 
-
-            vehicle.currentIndex =
-                    vehicle.routeCoordinates.size();
-
+            vehicle.currentIndex = vehicle.routeCoordinates.size();
             return;
         }
 
+        int stepSize = Math.max(1, (int) Math.ceil(vehicle.routeCoordinates.size() / (double) ROUTE_STEP_COUNT));
 
-        /*
-         * Demo sırasında rota yaklaşık
-         * 30 saniyede tamamlansın.
-         */
-        int stepSize =
-                Math.max(
-                        1,
-                        (int) Math.ceil(
-                                vehicle.routeCoordinates.size()
-                                        / 30.0
-                        )
-                );
-
-
-        vehicle.currentIndex =
-                Math.min(
-                        vehicle.currentIndex + stepSize,
-                        vehicle.routeCoordinates.size() - 1
-                );
+        vehicle.currentIndex = Math.min(vehicle.currentIndex + stepSize, vehicle.routeCoordinates.size() - 1);
     }
 
 
-    // =====================================================
-    // FRONTEND'E ROTA BİLGİLERİNİ VER
-    // =====================================================
-
+    // Frontend'e araçların başlangıç ve varış bilgilerini verir.
     public synchronized List<VehicleRouteInfo> getCurrentRoutes() {
 
-        List<VehicleRouteInfo> routes =
-                new ArrayList<>();
-
+        List<VehicleRouteInfo> routes = new ArrayList<>();
 
         for (VehicleSimulation vehicle : vehicles) {
 
             routes.add(
                     new VehicleRouteInfo(
-
                             vehicle.vehicleId,
 
                             vehicle.startPoint.getLocationName(),
@@ -293,68 +185,39 @@ public class VehicleSimulatorService {
                     )
             );
         }
-
-
         return routes;
     }
 
 
-    // =====================================================
-    // RASTGELE HIZ DEĞİŞİMİ
-    // =====================================================
-
-    @Scheduled(
-            fixedRate = 15000,
-            initialDelay = 15000
-    )
+    // Araç hızlarını 15 saniyede bir rastgele değiştirir.
+    @Scheduled(fixedRate = 15000, initialDelay = 15000)
     public synchronized void changeVehicleSpeeds() {
 
         for (VehicleSimulation vehicle : vehicles) {
 
-            if (
-                    vehicle.currentIndex
-                            >=
-                            vehicle.routeCoordinates.size()
-            ) {
-
+            if (vehicle.currentIndex >= vehicle.routeCoordinates.size()) {
                 continue;
             }
+            int speedChange = random.nextInt(SPEED_CHANGE_LIMIT * 2 + 1) - SPEED_CHANGE_LIMIT;
 
+            vehicle.currentSpeed += speedChange;
 
-            // -8 ile +8 arasında değişim.
-            vehicle.currentSpeed +=
-                    random.nextInt(17) - 8;
-
-
-            // Hız 50 - 100 km/h arasında kalır.
-            vehicle.currentSpeed =
-                    Math.max(
-                            50,
-                            Math.min(
-                                    100,
-                                    vehicle.currentSpeed
-                            )
-                    );
+            vehicle.currentSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, vehicle.currentSpeed));
         }
     }
 
 
-    // =====================================================
-    // ARAÇ SİMÜLASYON DURUMU
-    // =====================================================
-
+    // Her aracın simülasyon sırasında ihtiyaç duyduğu bilgileri tutar.
     private static class VehicleSimulation {
 
         private final String vehicleId;
 
         private final RandomRoutePoint startPoint;
-
         private final RandomRoutePoint destinationPoint;
 
         private final List<List<Double>> routeCoordinates;
 
         private int currentIndex = 0;
-
         private double currentSpeed;
 
 
@@ -365,7 +228,6 @@ public class VehicleSimulatorService {
                 List<List<Double>> routeCoordinates,
                 double currentSpeed
         ) {
-
             this.vehicleId = vehicleId;
             this.startPoint = startPoint;
             this.destinationPoint = destinationPoint;

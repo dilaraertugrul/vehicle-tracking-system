@@ -18,8 +18,6 @@ public class LocationConsumer {
 
             // Bu metodun kafkadaki hangi topici dinleyeceini gösteriyo
             topics = "vehicle-location-events",
-
-            // hangi consumeer grupa ait olduğunu belitiyor
             groupId = "spring-location-group"
     )
     public void consume(LocationEvent event) {
@@ -39,6 +37,5 @@ public class LocationConsumer {
         System.out.println("Longitude: " + event.getLongitude());
         System.out.println("Hız: " + event.getSpeed());
         System.out.println("Zaman: " + event.getTimestamp());
-        System.out.println("-----------------------------");
     }
 }

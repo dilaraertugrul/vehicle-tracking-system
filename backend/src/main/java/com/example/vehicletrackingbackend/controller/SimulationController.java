@@ -14,13 +14,11 @@ public class SimulationController {
 
     private final VehicleSimulatorService vehicleSimulatorService;
 
-
     public SimulationController(
             VehicleSimulatorService vehicleSimulatorService
     ) {
 
-        this.vehicleSimulatorService =
-                vehicleSimulatorService;
+        this.vehicleSimulatorService = vehicleSimulatorService;
     }
 
 

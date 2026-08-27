@@ -25,11 +25,6 @@ public class RouteController {
         this.routeService = routeService;
     }
 
-
-    // =====================================================
-    // BAŞLANGIÇ → VARIŞ ROTASINI GETİR
-    // =====================================================
-
     @GetMapping
     public List<List<Double>> getRoute(
 
@@ -51,11 +46,8 @@ public class RouteController {
         );
     }
 
-
-    // =====================================================
     // GÜNCEL KONUMDAN VARIŞ NOKTASINA
     // KALAN MESAFE VE SÜRE
-    // =====================================================
 
     @GetMapping("/remaining")
     public RouteEstimate getRemainingRouteEstimate(

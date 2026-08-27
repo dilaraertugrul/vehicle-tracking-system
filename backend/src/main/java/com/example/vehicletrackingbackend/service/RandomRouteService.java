@@ -1,8 +1,9 @@
 package com.example.vehicletrackingbackend.service;
 
 import com.example.vehicletrackingbackend.dto.RandomRoutePoint;
-
+import tools.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Random;
@@ -11,239 +12,286 @@ import java.util.Random;
 @Service
 public class RandomRouteService {
 
-    private final Random random =
-            new Random();
+    private static final int MAX_ATTEMPTS = 6;
+    private static final long NOMINATIM_INTERVAL_MS = 1100;
 
-
-    // =====================================================
-    // BATI TÜRKİYE
-    // =====================================================
-
-    private static final List<RandomRoutePoint> WEST_CITIES =
+    private static final List<String> LOCATION_FIELDS =
             List.of(
-
-                    new RandomRoutePoint(
-                            "İstanbul",
-                            41.0082,
-                            28.9784
-                    ),
-
-                    new RandomRoutePoint(
-                            "Tekirdağ",
-                            40.9780,
-                            27.5110
-                    ),
-
-                    new RandomRoutePoint(
-                            "Çanakkale",
-                            40.1553,
-                            26.4142
-                    ),
-
-                    new RandomRoutePoint(
-                            "Bursa",
-                            40.1950,
-                            29.0600
-                    ),
-
-                    new RandomRoutePoint(
-                            "Balıkesir",
-                            39.6484,
-                            27.8826
-                    ),
-
-                    new RandomRoutePoint(
-                            "İzmir",
-                            38.4237,
-                            27.1428
-                    ),
-
-                    new RandomRoutePoint(
-                            "Manisa",
-                            38.6191,
-                            27.4289
-                    ),
-
-                    new RandomRoutePoint(
-                            "Aydın",
-                            37.8560,
-                            27.8416
-                    ),
-
-                    new RandomRoutePoint(
-                            "Muğla",
-                            37.2153,
-                            28.3636
-                    )
+                    "city",
+                    "town",
+                    "municipality",
+                    "village",
+                    "county",
+                    "state_district",
+                    "state"
             );
 
 
-    // =====================================================
-    // ORTA TÜRKİYE
-    // =====================================================
+    private final Random random = new Random();
 
-    private static final List<RandomRoutePoint> CENTRAL_CITIES =
-            List.of(
+    private final RouteService routeService;
+    private final RestClient nominatimClient;
 
-                    new RandomRoutePoint(
-                            "Ankara",
-                            39.9334,
-                            32.8597
-                    ),
-
-                    new RandomRoutePoint(
-                            "Eskişehir",
-                            39.7767,
-                            30.5206
-                    ),
-
-                    new RandomRoutePoint(
-                            "Konya",
-                            37.8746,
-                            32.4932
-                    ),
-
-                    new RandomRoutePoint(
-                            "Aksaray",
-                            38.3687,
-                            34.0370
-                    ),
-
-                    new RandomRoutePoint(
-                            "Nevşehir",
-                            38.6244,
-                            34.7239
-                    ),
-
-                    new RandomRoutePoint(
-                            "Kırşehir",
-                            39.1458,
-                            34.1606
-                    ),
-
-                    new RandomRoutePoint(
-                            "Kayseri",
-                            38.7312,
-                            35.4787
-                    ),
-
-                    new RandomRoutePoint(
-                            "Yozgat",
-                            39.8181,
-                            34.8147
-                    ),
-
-                    new RandomRoutePoint(
-                            "Sivas",
-                            39.7505,
-                            37.0150
-                    )
-            );
+    private long lastNominatimRequestTime = 0;
 
 
-    // =====================================================
-    // DOĞU TÜRKİYE
-    // =====================================================
+    public RandomRouteService(
+            RouteService routeService
+    ) {
 
-    private static final List<RandomRoutePoint> EAST_CITIES =
-            List.of(
+        this.routeService = routeService;
 
-                    new RandomRoutePoint(
-                            "Erzurum",
-                            39.9043,
-                            41.2679
-                    ),
+        this.nominatimClient =
+                RestClient.builder()
+                        .baseUrl(
+                                "https://nominatim.openstreetmap.org"
+                        )
+                        .defaultHeader(
+                                "User-Agent",
+                                "vehicle-tracking-learning-project/1.0"
+                        )
+                        .defaultHeader(
+                                "Accept-Language",
+                                "tr"
+                        )
+                        .build();
+    }
 
-                    new RandomRoutePoint(
-                            "Erzincan",
-                            39.7500,
-                            39.5000
-                    ),
-
-                    new RandomRoutePoint(
-                            "Malatya",
-                            38.3552,
-                            38.3095
-                    ),
-
-                    new RandomRoutePoint(
-                            "Elazığ",
-                            38.6810,
-                            39.2264
-                    ),
-
-                    new RandomRoutePoint(
-                            "Diyarbakır",
-                            37.9144,
-                            40.2306
-                    ),
-
-                    new RandomRoutePoint(
-                            "Şanlıurfa",
-                            37.1674,
-                            38.7955
-                    ),
-
-                    new RandomRoutePoint(
-                            "Mardin",
-                            37.3212,
-                            40.7245
-                    ),
-
-                    new RandomRoutePoint(
-                            "Van",
-                            38.5012,
-                            43.3729
-                    ),
-
-                    new RandomRoutePoint(
-                            "Batman",
-                            37.8812,
-                            41.1351
-                    )
-            );
-
-
-    // =====================================================
-    // BÖLGEDEN RASTGELE ŞEHİR
-    // =====================================================
 
     public RandomRoutePoint getRandomPoint(
             Region region
     ) {
 
-        List<RandomRoutePoint> cities =
-                switch (region) {
-
-                    case WEST ->
-                            WEST_CITIES;
-
-                    case CENTRAL ->
-                            CENTRAL_CITIES;
-
-                    case EAST ->
-                            EAST_CITIES;
-                };
+        RuntimeException lastError = null;
 
 
-        return cities.get(
-                random.nextInt(
-                        cities.size()
-                )
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+
+            try {
+
+                double latitude =
+                        randomBetween(
+                                region.minLatitude,
+                                region.maxLatitude
+                        );
+
+                double longitude =
+                        randomBetween(
+                                region.minLongitude,
+                                region.maxLongitude
+                        );
+
+
+                // Rastgele koordinatı en yakın sürülebilir yola oturtur.
+                RouteService.RoadPoint roadPoint =
+                        routeService.snapToNearestRoad(
+                                latitude,
+                                longitude
+                        );
+
+
+                String locationName =
+                        reverseGeocode(
+                                roadPoint.latitude(),
+                                roadPoint.longitude()
+                        );
+
+
+                if (locationName != null) {
+
+                    return new RandomRoutePoint(
+                            locationName,
+                            roadPoint.latitude(),
+                            roadPoint.longitude()
+                    );
+                }
+
+
+            } catch (RuntimeException exception) {
+
+                lastError = exception;
+            }
+        }
+
+
+        throw new IllegalStateException(
+                region
+                        + " bölgesinde geçerli rastgele konum oluşturulamadı.",
+                lastError
         );
     }
 
 
-    // =====================================================
-    // BÖLGELER
-    // =====================================================
+    private double randomBetween(
+            double min,
+            double max
+    ) {
+
+        return min
+                + random.nextDouble()
+                * (max - min);
+    }
+
+
+    private String reverseGeocode(
+            double latitude,
+            double longitude
+    ) {
+
+        waitForNominatim();
+
+
+        JsonNode response =
+                nominatimClient
+                        .get()
+                        .uri(
+                                uriBuilder ->
+                                        uriBuilder
+                                                .path("/reverse")
+                                                .queryParam(
+                                                        "format",
+                                                        "jsonv2"
+                                                )
+                                                .queryParam(
+                                                        "lat",
+                                                        latitude
+                                                )
+                                                .queryParam(
+                                                        "lon",
+                                                        longitude
+                                                )
+                                                .queryParam(
+                                                        "zoom",
+                                                        12
+                                                )
+                                                .queryParam(
+                                                        "addressdetails",
+                                                        1
+                                                )
+                                                .build()
+                        )
+                        .retrieve()
+                        .body(JsonNode.class);
+
+
+        if (response == null) {
+            return null;
+        }
+
+
+        JsonNode address =
+                response.path("address");
+
+
+        // Türkiye dışındaki noktaları kabul etme.
+        String countryCode =
+                address
+                        .path("country_code")
+                        .asText();
+
+
+        if (!"tr".equalsIgnoreCase(countryCode)) {
+            return null;
+        }
+
+
+        for (String field : LOCATION_FIELDS) {
+
+            String value =
+                    address
+                            .path(field)
+                            .asText("");
+
+
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+
+
+        return null;
+    }
+
+
+    // Nominatim'e çok hızlı arka arkaya istek gönderilmesini engeller.
+    private synchronized void waitForNominatim() {
+
+        long elapsed =
+                System.currentTimeMillis()
+                        - lastNominatimRequestTime;
+
+
+        long waitTime =
+                NOMINATIM_INTERVAL_MS
+                        - elapsed;
+
+
+        if (waitTime > 0) {
+
+            try {
+
+                Thread.sleep(waitTime);
+
+            } catch (InterruptedException exception) {
+
+                Thread.currentThread().interrupt();
+
+                throw new IllegalStateException(
+                        "Konum servisi bekleme işlemi kesildi.",
+                        exception
+                );
+            }
+        }
+
+
+        lastNominatimRequestTime =
+                System.currentTimeMillis();
+    }
+
 
     public enum Region {
 
-        WEST,
+        WEST(
+                36.5,
+                42.0,
+                26.0,
+                31.5
+        ),
 
-        CENTRAL,
+        CENTRAL(
+                36.5,
+                42.0,
+                31.5,
+                38.0
+        ),
 
-        EAST
+        EAST(
+                36.5,
+                42.0,
+                38.0,
+                44.5
+        );
+
+
+        private final double minLatitude;
+        private final double maxLatitude;
+
+        private final double minLongitude;
+        private final double maxLongitude;
+
+
+        Region(
+                double minLatitude,
+                double maxLatitude,
+                double minLongitude,
+                double maxLongitude
+        ) {
+
+            this.minLatitude = minLatitude;
+            this.maxLatitude = maxLatitude;
+
+            this.minLongitude = minLongitude;
+            this.maxLongitude = maxLongitude;
+        }
     }
 }

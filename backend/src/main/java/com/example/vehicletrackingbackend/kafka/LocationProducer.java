@@ -12,11 +12,7 @@ public class LocationProducer {
     // Kafka'ya mesaj göndermek için Spring'in sağladığı araç.
     private final KafkaTemplate<String, LocationEvent> kafkaTemplate;
 
-
-    public LocationProducer(
-            KafkaTemplate<String, LocationEvent> kafkaTemplate
-    ) {
-
+    public LocationProducer(KafkaTemplate<String, LocationEvent> kafkaTemplate) {
         this.kafkaTemplate = kafkaTemplate;
     }
 

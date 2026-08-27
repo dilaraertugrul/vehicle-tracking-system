@@ -1,6 +1,6 @@
 package com.example.vehicletrackingbackend.dto;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OsrmRoute {
 
